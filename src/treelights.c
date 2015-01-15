@@ -31,12 +31,12 @@ int prg[PROGRAMS][4][4] = {
 
 int main(int argc, char * argv[])
 {
-	int program = 0;
-	float brightness = 1;
-	int speed = 2;
+    int program = 0;
+    float brightness = 1;
+    int speed = 2;
 
-	// signal handling
-	do_exit = 0;
+    // signal handling
+    do_exit = 0;
     static struct sigaction act; 
     sigemptyset (&act.sa_mask);
     act.sa_flags = 0;
@@ -48,21 +48,20 @@ int main(int argc, char * argv[])
     sigaction (SIGTERM, &act, 0);
     act.sa_handler =  cleanup;
     sigaction (SIGKILL, &act, 0);
-	// ---
+    // ---
 	
-	// UNIX socket
-	mode_t mask = umask(S_IXUSR | S_IXGRP | S_IXOTH);
+    // UNIX socket
+    mode_t mask = umask(S_IXUSR | S_IXGRP | S_IXOTH);
     int s, s2, len;
-	unsigned int t;
+    unsigned int t;
     struct sockaddr_un local, remote;
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
     {
         printf("Socket error\n");
         return -1;
     }
-
-	int flags = fcntl(s, F_GETFL, 0);
-	fcntl(s, F_SETFL, flags | O_NONBLOCK); 
+    int flags = fcntl(s, F_GETFL, 0);
+    fcntl(s, F_SETFL, flags | O_NONBLOCK); 
     local.sun_family = AF_UNIX;
     strcpy(local.sun_path, SOCKET_NAME);
     unlink(local.sun_path);
@@ -270,7 +269,6 @@ int gpioRead(int gpio)
 // Uses 2 registers: one to set GPIO and another to clear GPIO
 void gpioSet(int gpio, int value)
 {
-	volatile unsigned *writeaddr;
 	if (value == 0)
 	{
 		*(m_base_addr + 4) = (1 << gpio);
@@ -287,7 +285,6 @@ void nsleep(unsigned long nsecs)
 {
 	if(nsecs == 0)
 	{
-		nanosleep(NULL,NULL);
 		return;
 	}
 
@@ -308,7 +305,6 @@ void _usleep(unsigned long usecs)
 {
 	if(usecs == 0)
 	{
-		nsleep(0);
 		return;
 	}
 
