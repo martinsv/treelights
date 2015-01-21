@@ -285,7 +285,7 @@ void nsleep(unsigned long nsecs)
 {
 	if(nsecs == 0)
 	{
-		return;
+		nanosleep(NULL, NULL);
 	}
 
 	struct timespec ts;
