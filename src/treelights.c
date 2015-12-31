@@ -1,14 +1,15 @@
 #include "treelights.h"
 
-#define GPIO_ADDR 0x18040000 
+#define GPIO_ADDR 0x18040000
 #define GPIO_BLOCK 48
-#define GPIO_P1 18
-#define GPIO_N1 19
-#define GPIO_P2 20
-#define GPIO_N2 23
-#define GPIO_OE 24
-#define GPIO_ON 0
-#define GPIO_OFF 1
+
+#define GPIO_EN1 21
+#define GPIO_EN2 22
+#define GPIO_DIR1 20
+#define GPIO_DIR2 23
+
+#define GPIO_ON 1
+#define GPIO_OFF 0
 #define GPIO_OUT 1
 #define GPIO_IN 0
 
@@ -18,7 +19,7 @@
 
 #define PROGRAMS 6
 
-int gpio[5] = {GPIO_P1, GPIO_N1, GPIO_P2, GPIO_N2, GPIO_OE};
+int gpio[4] = {GPIO_EN1, GPIO_DIR1, GPIO_EN2, GPIO_DIR2};
 
 int prg[PROGRAMS][4][4] = {
 	{ {0, 1, 0, 0}, {99, -1, 0, 0}, {0, 0, 0, 1}, {0, 0, 99, -1} },
@@ -37,7 +38,7 @@ int main(int argc, char * argv[])
 
     // signal handling
     do_exit = 0;
-    static struct sigaction act; 
+    static struct sigaction act;
     sigemptyset (&act.sa_mask);
     act.sa_flags = 0;
     act.sa_handler = SIG_IGN;
@@ -49,7 +50,7 @@ int main(int argc, char * argv[])
     act.sa_handler =  cleanup;
     sigaction (SIGKILL, &act, 0);
     // ---
-	
+
     // UNIX socket
     mode_t mask = umask(S_IXUSR | S_IXGRP | S_IXOTH);
     int s, s2, len;
@@ -61,7 +62,7 @@ int main(int argc, char * argv[])
         return -1;
     }
     int flags = fcntl(s, F_GETFL, 0);
-    fcntl(s, F_SETFL, flags | O_NONBLOCK); 
+    fcntl(s, F_SETFL, flags | O_NONBLOCK);
     local.sun_family = AF_UNIX;
     strcpy(local.sun_path, SOCKET_NAME);
     unlink(local.sun_path);
@@ -77,24 +78,22 @@ int main(int argc, char * argv[])
     }
     umask(mask);
 	// ---
-	
+
 	int fd;
-	
+
 	// get direct access to GPIO registers through /dev/mem
 	if (gpioSetup())
 	{
 		printf("Error accessing GPIO registers\n");
 		return -1;
 	}
-	
+
 	// set GPIO direction
-	for (int i=0; i<5; i++)
+	for (int i=0; i<4; i++)
 	{
 		gpioDirection(gpio[i], GPIO_OUT);
 	}
-	
-	gpioSet(GPIO_OE, GPIO_ON); // enable LED driver outputs
-	
+
 	char sockinput[25];
 	char * cmd[2];
 	int tick = 0;
@@ -104,65 +103,59 @@ int main(int argc, char * argv[])
 	int directionPos = prg[program][tock][1];
 	int gpioValueNeg = prg[program][tock][2];
 	int directionNeg = prg[program][tock][3];
-	
+
 	while(!do_exit)
 	{
 		// PWM
-		for (int j = 0; j < 2; j++)
+		for (int j = 0; j < 2; j++)  // setting initial state in each cycle
 		{
 			if (gpioValuePos > 0)
 			{
-				gpioSet(gpio[2*j], GPIO_ON);
-				gpioSet(gpio[2*j+1], GPIO_OFF);
+				gpioSet(gpio[2*j+1], GPIO_ON); // positive bridge polatiry
+				gpioSet(gpio[2*j], GPIO_ON); // enable output
 			}
 			else
 			{
 				if (gpioValueNeg == 99)
 				{
-					gpioSet(gpio[2*j], GPIO_OFF);
-					gpioSet(gpio[2*j+1], GPIO_ON);
-				}
-				else
-				{
-					gpioSet(gpio[2*j], 1);
-					gpioSet(gpio[2*j+1], GPIO_OFF);
+					gpioSet(gpio[2*j+1], GPIO_OFF); // negative bridge polarity
 				}
 			}
 		}
 
-		for (int i = 0; i < 100; i++)
-		{   
+		for (int i = 0; i < 100; i++) // setting brightness
+		{
 			for (int j = 0; j < 2; j++)
 			{
 				if (i == floor((float)gpioValuePos/brightness))
 				{
-					gpioSet(gpio[2*j], GPIO_OFF);
-					gpioSet(gpio[2*j+1], GPIO_OFF);
+					gpioSet(gpio[2*j], GPIO_OFF); // disable output
 				}
 				if (i == (100 - floor(((float)gpioValueNeg/brightness))))
 				{
-					gpioSet(gpio[2*j], GPIO_OFF);
-					gpioSet(gpio[2*j+1], GPIO_ON);
+					gpioSet(gpio[2*j+1], GPIO_OFF); // negative bridge polarity
+					gpioSet(gpio[2*j], GPIO_ON); // enable output
 				}
 			}
-			_usleep(PWM_PERIOD);
+			usleep(10);
+			//_usleep(PWM_PERIOD);
 		}
-		
+
 		// ---
 		tick++;
 		if (tick == speed)
 		{
 			// receive command through UNIX socket
-			s2 = accept(s, (struct sockaddr *)&remote, &t);	
+			s2 = accept(s, (struct sockaddr *)&remote, &t);
 			if (s2 > 0)
 			{
 				int i = recv(s2, sockinput, 25, 0);
 				sockinput[i] = 0; // null-terminated string
 				close(s2);
-				
+
 				cmd[0] = strtok(sockinput, "- \n");
 				cmd[1] = strtok(NULL, "- \n");
-				
+
 				if (strcmp (cmd[0], "brightness") == 0) // set brightness
 				{
 					brightness = atoi(cmd[1]); // 1 is maximum, 2 is half-brightness, etc.
@@ -170,7 +163,7 @@ int main(int argc, char * argv[])
 				else if (strcmp (cmd[0], "program") == 0) // set mode
 				{
 					program = atoi(cmd[1]); // 0...PROGRAMS
-					
+
 					// restart program
 					tock = 0;
 					gpioValuePos = prg[program][tock][0];
@@ -185,14 +178,6 @@ int main(int argc, char * argv[])
 					{
 						speed = 100;
 					}
-				}
-				else if (strcmp (cmd[0], "off") == 0) // off
-				{
-					gpioSet(GPIO_OE, GPIO_OFF);
-				}
-				else if (strcmp (cmd[0], "on") == 0) // on
-				{
-					gpioSet(GPIO_OE, GPIO_ON);
 				}
 			}
 
@@ -323,4 +308,3 @@ void _usleep(unsigned long usecs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
